@@ -31,35 +31,76 @@ parse_data      ParseData 100 dup(<>)
 CODESEG
     PROC    MAIN
         start:
-            mov ax, @data
-            mov ds, ax
-
-            ; Read substring
-            mov di, offset sub_string
-            call ClearString
-            call ReadString        
-            call StrLength
-            mov [sub_string.strlen], cl ; Set strlen
-
-            mov di, offset sub_string
-            call ClearString
-            call ReadString
-            call StrLength
-            mov [sub_string.strlen], cl ; Set strlen
-
+            call InitDataSegment
+            call GetSubstring    
         process_strings:
-            ; Read strings
-        ;     mov di, offset tmp_string
-        ;     call ProcessString
-        ;     ; Check if EOF
-        ;     cmp byte ptr ds:[si+1], ASCNull
-        ;     jne process_strings
-    
+            mov di, offset tmp_string
+            call ProcessString
+            ; Check if EOF
+            cmp [byte ptr ds:[di+1]], 0
+            jne process_strings
         exit:
             mov ah, 4ch
             int 21h
 
     ENDP    MAIN
+
+    PROC    InitDataSegment
+            mov ax, @data
+            mov ds, ax 
+    ENDP    InitDataSegment
+
+    PROC    GetSubstring
+            ; Reserve registers
+            push si
+            push di
+            push cx
+            push bx
+            ; Get first argument
+            mov cl, [es:[80h]]
+            xor ch, ch
+            mov bx, 81h
+            mov di, 82h
+            add bx, cx
+            mov [byte ptr es:[bx]], 0
+            ; Write to substring
+            mov bx, 0
+            mov si, offset sub_string.chars
+        copy_char:
+            mov bl, [es:[di]]
+            mov [byte ptr ds:[si]], bl
+            inc si
+            inc di
+            cmp [byte ptr es:[di-1]], ASCNull
+            jne copy_char
+            ; Restore registers
+            pop bx
+            pop cx
+            pop di
+            pop si  
+            ret
+    ENDP    GetSubstring
+
+    PROC    ProcessString
+            ; Reserve registers
+            push ax
+            push bx
+            push cx
+            push dx
+            push di
+            ; Read string
+            call ClearString
+            call ReadString
+            call StrLength
+            mov [tmp_string.strlen], cl
+            ; Restore registers               
+            pop di
+            pop dx
+            pop cx
+            pop bx
+            pop ax
+            ret
+    ENDP    ProcessString
 
     PROC    ClearString
             ; Reserve registers
@@ -83,12 +124,6 @@ CODESEG
             ret
     ENDP    ClearString
 
-    PROC    ProcessString
-            call ReadString
-
-            ret
-    ENDP    ProcessString
-
     PROC    ReadString
             ; Reserve registers
             push ax
@@ -98,6 +133,18 @@ CODESEG
             push di
             ; StrBuffer.chars
             add di, 2
+        check_lf:
+            mov ah, 3Fh               
+            mov bx, 0h                
+            mov cx, 1                 
+            mov dx, di 
+            int 21h                   
+            inc di
+            cmp [byte ptr ds:[di-1]], ASClf
+            jne read_next
+        if_lf:
+            dec di
+            mov [byte ptr ds:[di]], ASCNull
         read_next:
             mov ah, 3Fh               ; read from input
             mov bx, 0h                ; stdin handle
@@ -105,37 +152,16 @@ CODESEG
             mov dx, di                ; read to ds:dx 
             int 21h                   ;  ax = number of bytes read
             inc di                    ; next index
-
-            cmp [byte ptr ds:[di-1]], ' '        ; check if space
-            je set_1
             cmp [byte ptr ds:[di-1]], ASClf      ; check if lf
-            je set_1
-            cmp [byte ptr ds:[di-1]], ASCcr      ; check if crlf
-            je set_2
+            je set
+            cmp [byte ptr ds:[di-1]], ASCcr      ; check if cr
+            je set
             cmp [byte ptr ds:[di-1]], ASCNull    ; check if EOF
             jne read_next
 
-        set_1:
+        set:
             mov [byte ptr ds:[di-1]], ASCNull
             ; Restore registers               
-            pop di
-            pop dx
-            pop cx
-            pop bx
-            pop ax
-            ret
-
-        set_2:
-            ; Consume CRLF
-            mov [byte ptr ds:[di-1]], ASCNull
-            mov ah, 3Fh               
-            mov bx, 0h                
-            mov cx, 1                 
-            mov dx, di           
-            int 21h
-            inc di    
-            mov [byte ptr ds:[di-1]], ASCNull  
-            ; Restore registers
             pop di
             pop dx
             pop cx
