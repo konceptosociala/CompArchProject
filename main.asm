@@ -10,21 +10,22 @@ ASCcr           EQU     13              ; ASCII carriage return
 ASClf           EQU     10              ; ASCII line feed 
 
 ; STRUCTURES
-STRUC Data
+STRUC ParseData
  index          db 0
  occurances     db 0
-ENDS Data
+ENDS ParseData
 
 STRUC StrBuffer
  maxlen         db BufSize              ; Maximum buffer length
  strlen         db 0                    ; String length
  chars          db BufSize DUP (0)      ; Buffer for StrRead
-ENDS strBuffer
+ENDS StrBuffer
 
 ; DATA
 DATASEG
-sub_string  StrBuffer <>
-tmp_string  StrBuffer <>
+sub_string      StrBuffer <>
+tmp_string      StrBuffer <>
+parse_data      ParseData 100 dup(<>)
 
 ; CODE
 CODESEG
@@ -35,12 +36,20 @@ CODESEG
 
             ; Read substring
             mov di, offset sub_string
+            call ClearString
+            call ReadString        
+            call StrLength
+            mov [sub_string.strlen], cl ; Set strlen
+
+            mov di, offset sub_string
+            call ClearString
             call ReadString
             call StrLength
+            mov [sub_string.strlen], cl ; Set strlen
 
-        ; process_strings:
-        ;     ; Read strings
-        ;     mov si, offset tmp_string
+        process_strings:
+            ; Read strings
+        ;     mov di, offset tmp_string
         ;     call ProcessString
         ;     ; Check if EOF
         ;     cmp byte ptr ds:[si+1], ASCNull
@@ -52,16 +61,43 @@ CODESEG
 
     ENDP    MAIN
 
+    PROC    ClearString
+            ; Reserve registers
+            push di
+            push cx
+            ; Clear strlen
+            mov [byte ptr ds:[di+1]], 0
+            ; StrBuffer.chars
+            add di, 2
+            ; Counter
+            mov cx, 0
+        clear_char:
+            mov [byte ptr ds:[di]], 0
+            inc di
+            inc cx
+            cmp cx, 255
+            jne clear_char
+            ; Restore registers
+            pop cx
+            pop di
+            ret
+    ENDP    ClearString
+
     PROC    ProcessString
             call ReadString
 
             ret
     ENDP    ProcessString
 
-    ; Read string until space
     PROC    ReadString
-        push di
-        add di, 2
+            ; Reserve registers
+            push ax
+            push bx
+            push cx
+            push dx
+            push di
+            ; StrBuffer.chars
+            add di, 2
         read_next:
             mov ah, 3Fh               ; read from input
             mov bx, 0h                ; stdin handle
@@ -70,18 +106,41 @@ CODESEG
             int 21h                   ;  ax = number of bytes read
             inc di                    ; next index
 
-            cmp byte ptr ds:[di-1], ' '        ; check if space
-            je set
-            cmp byte ptr ds:[di-1], ASCcr      ; check if space
-            je set
-            cmp byte ptr ds:[di-1], ASCNull     ; check if EOF
-            je set
-            cmp byte ptr ds:[di-1], ASClf       ; check if space
+            cmp [byte ptr ds:[di-1]], ' '        ; check if space
+            je set_1
+            cmp [byte ptr ds:[di-1]], ASClf      ; check if lf
+            je set_1
+            cmp [byte ptr ds:[di-1]], ASCcr      ; check if crlf
+            je set_2
+            cmp [byte ptr ds:[di-1]], ASCNull    ; check if EOF
             jne read_next
 
-        set:
-            mov [di-1], ASCNull
+        set_1:
+            mov [byte ptr ds:[di-1]], ASCNull
+            ; Restore registers               
             pop di
+            pop dx
+            pop cx
+            pop bx
+            pop ax
+            ret
+
+        set_2:
+            ; Consume CRLF
+            mov [byte ptr ds:[di-1]], ASCNull
+            mov ah, 3Fh               
+            mov bx, 0h                
+            mov cx, 1                 
+            mov dx, di           
+            int 21h
+            inc di    
+            mov [byte ptr ds:[di-1]], ASCNull  
+            ; Restore registers
+            pop di
+            pop dx
+            pop cx
+            pop bx
+            pop ax
             ret
     ENDP    ReadString
 
@@ -104,7 +163,7 @@ CODESEG
         count:
             inc di      
             inc cx              
-            cmp byte ptr ds:[di-1], ASCNull
+            cmp [byte ptr ds:[di-1]], ASCNull
             jne count
 
             dec cx
