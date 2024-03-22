@@ -11,8 +11,8 @@ ASClf           EQU     10              ; ASCII line feed
 
 ; STRUCTURES
 STRUC ParseData
- index          db 0
- occurances     db 0
+ index          db 255
+ occurances     db 255
 ENDS ParseData
 
 STRUC StrBuffer
@@ -34,8 +34,17 @@ CODESEG
             call InitDataSegment
             call GetSubstring    
         process_strings:
+            mov si, offset sub_string
             mov di, offset tmp_string
-            call ProcessString
+            ; Read string
+            call ClearString
+            call ReadString
+            call StrLength
+            mov [tmp_string.strlen], cl
+            ; StrPos
+            call StrCompare
+            je exit
+            mov ax, 66
             ; Check if EOF
             cmp [byte ptr ds:[di+1]], 0
             jne process_strings
@@ -73,6 +82,9 @@ CODESEG
             inc di
             cmp [byte ptr es:[di-1]], ASCNull
             jne copy_char
+            mov di, offset sub_string
+            call StrLength
+            mov [sub_string.strlen], cl
             ; Restore registers
             pop bx
             pop cx
@@ -81,26 +93,28 @@ CODESEG
             ret
     ENDP    GetSubstring
 
-    PROC    ProcessString
-            ; Reserve registers
-            push ax
-            push bx
-            push cx
-            push dx
-            push di
-            ; Read string
-            call ClearString
-            call ReadString
-            call StrLength
-            mov [tmp_string.strlen], cl
-            ; Restore registers               
-            pop di
-            pop dx
-            pop cx
-            pop bx
-            pop ax
-            ret
-    ENDP    ProcessString
+;     PROC    ProcessString
+;             ; Reserve registers
+;             push ax
+;             push bx
+;             push cx
+;             push dx
+;             push di
+;             ; Read string
+;             call ClearString
+;             call ReadString
+;             call StrLength
+;             mov [tmp_string.strlen], cl
+;             ; StrPos
+;             call StrPos
+;             ; Restore registers               
+;             pop di
+;             pop dx
+;             pop cx
+;             pop bx
+;             pop ax
+;             ret
+;     ENDP    ProcessString
 
     PROC    ClearString
             ; Reserve registers
@@ -211,21 +225,43 @@ CODESEG
     ;       none
     ;---------------------------------------------------------------
     PROC    StrCompare
-            push    ax              ; Save modified registers
+            ; Reserve registers
+            push    ax
+            push    cx
             push    di
             push    si
-            cld                     ; Auto-increment si
-    @@10:
-            lodsb                   ; al <- [si], si <- si + 1
-            scasb                   ; Compare al and [di]; di <- di + 1
-            jne     @@20            ; Exit if non-equal chars found
-            or      al, al          ; Is al=0? (i.e. at end of s1)
-            jne     @@10            ; If no jump, else exit
-    @@20:
-            pop     si              ; Restore registers
-            pop     di
-            pop     ax
-            ret                     ; Return flags to caller
+            ; 1 = true, 0 = false
+            mov cx, 1
+            ; Check length
+            mov al, [byte ptr ds:[si+1]]
+            cmp [byte ptr ds:[di+1]], al
+            jne not_equal
+            ; StrBuffer.chars
+            add di, 2
+            add si, 2
+        compare_loop:
+            mov al, [byte ptr ds:[si]]
+            cmp [byte ptr ds:[di]], al
+            jne not_equal
+            inc di
+            inc si
+            cmp [byte ptr ds:[di]], ASCNull
+            je comp
+            jmp compare_loop
+
+        not_equal:
+            mov cx, 0
+            jmp comp
+
+        comp:
+            cmp cx, 1    
+
+            ; Restore registers
+            pop    si
+            pop    di
+            pop    cx
+            pop    ax
+            ret
     ENDP    StrCompare
 
     ;---------------------------------------------------------------
