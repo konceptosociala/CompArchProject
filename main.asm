@@ -8,6 +8,8 @@ BufSize         EQU     255             ; Maximum string size (<=255)
 ASCNull         EQU     0               ; ASCII null
 ASCcr           EQU     13              ; ASCII carriage return
 ASClf           EQU     10              ; ASCII line feed 
+true            EQU     1
+false           EQU     0
 
 ; STRUCTURES
 STRUC ParseData
@@ -42,9 +44,74 @@ CODESEG
             call StrLength
             mov [tmp_string.strlen], cl
             ; StrPos
-            call StrCompare
-            je exit
-            mov ax, 66
+            ; Reserve registers
+            push ax
+            push bx
+            push cx
+            push di
+            push si
+            ; Pos of substr == undefined
+            mov dl, 255
+            ; Has substring
+            mov cl, true
+            ; DH = Target idx
+            mov dh, 0
+            ; Str loop
+        str_pos_loop_str:
+            cmp dh, [di+1]
+            je str_pos_end
+            ; CH = Sub idx
+            mov ch, 0
+            inc dh
+            ; Substr loop
+        str_pos_loop_substr:
+            cmp ch, [si+1]
+            je str_pos_check_eq
+            inc ch
+
+            mov ax, di 
+            add al, dh
+            add al, ch
+            mov bx, si
+            add bl, ch
+            add bl, 1
+
+            ;-----------
+            ; temporarily replace bx and dx, because `mov ax, [ax]` doesn't work
+            push bx
+            mov bx, ax
+            mov al, [bx]
+            mov ah, 0
+            pop bx
+            mov bl, [bx]
+            mov bh, 0
+            ;-----------
+
+            cmp ax, bx
+            je str_pos_loop_substr
+            jne str_pos_char_neq
+
+        str_pos_char_neq: ; це якась параша
+            mov cl, false
+            jmp str_pos_loop_substr
+
+        str_pos_check_eq:
+            cmp cl, true
+            je str_pos_is_eq
+            jne str_pos_loop_str
+
+        str_pos_is_eq:
+            mov dl, dh
+            mov dh, 0
+            jmp str_pos_end
+
+        str_pos_end:        
+            ; Restore registers
+            pop si
+            pop di
+            pop cx
+            pop bx
+            pop ax
             ; Check if EOF
             cmp [byte ptr ds:[di+1]], 0
             jne process_strings
@@ -185,14 +252,9 @@ CODESEG
     ENDP    ReadString
 
     ;---------------------------------------------------------------
-    ; StrLength     Count non-null characters in a string
-    ;---------------------------------------------------------------
-    ; Input:
     ;       di = address of string (s)
-    ; Output:
+    ; 
     ;       cx = number of non-null characters in s
-    ; Registers:
-    ;       cx
     ;---------------------------------------------------------------
     PROC    StrLength
             push ax
@@ -213,16 +275,10 @@ CODESEG
     ENDP    StrLength
 
     ;---------------------------------------------------------------
-    ; StrCompare    Compare two strings
-    ;---------------------------------------------------------------
-    ; Input:
     ;       si = address of string 1 (s1)
     ;       di = address of string 2 (s2) 
-    ; Output:
-    ;       flags set for conditional jump using jb, jbe,
-    ;        je, ja, or jae.
-    ; Registers:
-    ;       none
+    ; 
+    ;       flags set for conditional jump using je
     ;---------------------------------------------------------------
     PROC    StrCompare
             ; Reserve registers
@@ -231,7 +287,7 @@ CODESEG
             push    di
             push    si
             ; 1 = true, 0 = false
-            mov cx, 1
+            mov cx, true
             ; Check length
             mov al, [byte ptr ds:[si+1]]
             cmp [byte ptr ds:[di+1]], al
@@ -250,11 +306,11 @@ CODESEG
             jmp compare_loop
 
         not_equal:
-            mov cx, 0
+            mov cx, false
             jmp comp
 
         comp:
-            cmp cx, 1    
+            cmp cx, true  
 
             ; Restore registers
             pop    si
@@ -265,53 +321,70 @@ CODESEG
     ENDP    StrCompare
 
     ;---------------------------------------------------------------
-    ; StrPos        Search for position of a substring in a string
-    ;---------------------------------------------------------------
-    ; Input:
     ;       si = address of substring to find
     ;       di = address of target string to scan
-    ; Output:
-    ;       if zf = 1 then dx = index of substring
-    ;       if zf = 0 then substring was not found
-    ;       Note: dx is meaningless if zf = 0
-    ; Registers:
-    ;       dx
+    ;       
+    ;       dx = idx of substring; 255 == undefined
     ;---------------------------------------------------------------
-    PROC    StrPos
-            push    ax              ; Save modified registers
-            push    bx
-            push    cx
-            push    di
+    ; PROC    StrPos
+    ;     ; Reserve registers
+    ;     push ax
+    ;     push bx
+    ;     push cx
+    ;     push di
+    ;     push si
+    ;     ; Pos of substr == undefined
+    ;     mov dl, 255
+    ;     ; Has substring
+    ;     mov cl, true
+    ;     ; AX = Target idx
+    ;     mov ax, 0
+    ;     ; Str loop
+    ; str_pos_loop_str:
+    ;     cmp ax, [di]
+    ;     je str_pos_end
+    ;     ; BX = Sub idx
+    ;     mov bx, 0
+    ;     inc ax
+    ;     ; Substr loop
+    ; str_pos_loop_substr:
+    ;     cmp bx, [si]
+    ;     je str_pos_check_eq
+    ;     inc bx
+    ;     ; can't add ax, so replace it with bx temporarily
+    ;     ;----------------
+    ;     xchg ax, bx
+    ;     mov ch, [bx + di + 1] 
+    ;     xchg ax, bx
+    ;     mov dh, [bx + si + 1]
+    ;     ;----------------
+    ;     cmp dh, ch
+    ;     je str_pos_loop_substr
+    ;     jne str_pos_char_neq
 
-            call    StrLength       ; Find length of target string
-            mov     ax, cx          ; Save length(s2) in ax
-            xchg    si, di          ; Swap si and di
-            call    StrLength       ; Find length of substring
-            mov     bx, cx          ; Save length(s1) in bx
-            xchg    si, di          ; Restore si and di
-            sub     ax, bx          ; ax = last possible index
-            jb      @@20            ; Exit if len target < len substring
-            mov     dx, 0ffffh      ; Initialize dx to -1
-    @@10:
-            inc     dx              ; For i = 0 TO last possible index
-            mov     cl, [byte bx + di]      ; Save char at s[bx] in cl
-            mov     [byte bx + di], ASCNull ; Replace char with null
-            call    StrCompare              ; Compare si to altered di
-            mov     [byte bx + di], cl      ; Restore replaced char
-            je      @@20            ; Jump if match found, dx=index, zf=1
-            inc     di              ; Else advance target string index
-            cmp     dx, ax          ; When equal, all positions checked
-            jne     @@10            ; Continue search unless not found
+    ; str_pos_char_neq:
+    ;     mov cl, false
+    ;     jmp str_pos_loop_substr
 
-            xor     cx, cx          ; Substring not found.  Reset zf = 0
-            inc     cx              ;  to indicate no match
-    @@20:
-            pop     di              ; Restore registers
-            pop     cx
-            pop     bx
-            pop     ax
-            ret                     ; Return to caller
-    ENDP    StrPos
+    ; str_pos_check_eq:
+    ;     cmp cl, true
+    ;     je str_pos_is_eq
+    ;     jne str_pos_loop_str
+
+    ; str_pos_is_eq:
+    ;     mov dl, al
+    ;     mov dh, 0
+    ;     jmp str_pos_end
+
+    ; str_pos_end:        
+    ;     ; Restore registers
+    ;     pop si
+    ;     pop di
+    ;     pop cx
+    ;     pop bx
+    ;     pop ax
+    ;     ret
+    ; ENDP    StrPos
 
 
 END START
