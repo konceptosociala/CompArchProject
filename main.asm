@@ -14,7 +14,7 @@ false           EQU     0
 ; STRUCTURES
 STRUC ParseData
  index          db 255
- occurances     db 255
+ occs           db 255
 ENDS ParseData
 
 STRUC StrBuffer
@@ -35,6 +35,8 @@ CODESEG
         start:
             call InitDataSegment
             call GetSubstring    
+            ; ParseData counter
+            mov cx, 0
         process_strings:
             mov si, offset sub_string
             mov di, offset tmp_string
@@ -42,17 +44,18 @@ CODESEG
             call ClearString
             call ReadString
             call StrLength
-            mov [tmp_string.strlen], cl
-            mov dx, 3
-            ; StrPos
-            
-
-            call StrTrimStart
-
-
+            mov [tmp_string.strlen], dl
             ; Check if EOF
             cmp [byte ptr ds:[di+1]], 0
-            jne process_strings
+            je exit
+            ; Process string
+            call ProcessString  
+            ; Inc counter
+            inc cx
+            ; Loop          
+            jmp process_strings
+        sorting:
+            ; TODO: sorting
         exit:
             mov ah, 4ch
             int 21h
@@ -89,7 +92,7 @@ CODESEG
             jne copy_char
             mov di, offset sub_string
             call StrLength
-            mov [sub_string.strlen], cl
+            mov [sub_string.strlen], dl
             ; Restore registers
             pop bx
             pop cx
@@ -98,28 +101,53 @@ CODESEG
             ret
     ENDP    GetSubstring
 
-;     PROC    ProcessString
-;             ; Reserve registers
-;             push ax
-;             push bx
-;             push cx
-;             push dx
-;             push di
-;             ; Read string
-;             call ClearString
-;             call ReadString
-;             call StrLength
-;             mov [tmp_string.strlen], cl
-;             ; StrPos
-;             call StrPos
-;             ; Restore registers               
-;             pop di
-;             pop dx
-;             pop cx
-;             pop bx
-;             pop ax
-;             ret
-;     ENDP    ProcessString
+    PROC    ProcessString
+            ; Reserve registers
+            push ax
+            push bx
+            push cx
+            push dx
+            push di
+            ; Setup ParseData
+            mov bp, 0
+            add bp, offset parse_data
+            mov ax, 2
+            mul cx
+            add bp, ax
+            mov [byte ptr ds:[bp]], cl
+            mov [byte ptr ds:[bp+1]], 0
+        find_occurances:
+            ; Substr len
+            xchg di, si
+            call StrLength
+            xchg di, si
+            cmp dl, [tmp_string.strlen]
+            jg end_process
+            ; Get strpos
+            call StrPos
+            ; Check if found
+            cmp dl, 255
+            je occurance_not_found
+            jne occurance_found
+        occurance_not_found:
+            mov dx, 1
+            call StrTrimStart
+            jmp find_occurances
+        occurance_found:
+            add dl, [sub_string.strlen]
+            dec dl
+            call StrTrimStart
+            inc [byte ptr ds:[bp+1]]
+            jmp find_occurances
+        end_process:
+            ; Restore registers               
+            pop di
+            pop dx
+            pop cx
+            pop bx
+            pop ax
+            ret
+    ENDP    ProcessString
 
     PROC    ClearString
             ; Reserve registers
@@ -192,21 +220,21 @@ CODESEG
     ;---------------------------------------------------------------
     ;       di = address of string
     ; 
-    ;  OUT: cx = number of non-null characters in s
+    ;  OUT: dx = number of non-null characters in s
     ;---------------------------------------------------------------
     PROC    StrLength
             push ax
             push di
 
-            mov cx, 0
+            mov dx, 0
             add di, 2
         count:
             inc di      
-            inc cx              
+            inc dx              
             cmp [byte ptr ds:[di-1]], ASCNull
             jne count
 
-            dec cx
+            dec dx
             pop di 
             pop ax
             ret
@@ -350,6 +378,8 @@ CODESEG
             push cx
             push di
             push si
+            push bp
+            mov bp, 0
             ; Old length
             mov ch, [ds:[di+1]]
             ; Set length
@@ -368,6 +398,9 @@ CODESEG
             mov bp, di
             add bp, 2
             add bp, ax
+            ; Check if already null
+            cmp [byte ptr ds:[bp]], ASCNull
+            je str_trim_start_clear
             mov [byte ptr ds:[bp]], bl
             inc al
             cmp al, [di+1]
@@ -384,6 +417,7 @@ CODESEG
             jne str_trim_start_clear
 
             ; Restore registers
+            pop bp
             pop si
             pop di
             pop cx
