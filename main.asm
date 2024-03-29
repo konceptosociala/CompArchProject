@@ -125,17 +125,13 @@ CODESEG
             call StrLength
             xchg di, si
             cmp dl, [tmp_string.strlen]
-            jg end_process
+            ja end_process
             ; Get strpos
             call StrPos
             ; Check if found
             cmp dl, 255
-            je occurance_not_found
+            je end_process
             jne occurance_found
-        occurance_not_found:
-            mov dx, 1
-            call StrTrimStart
-            jmp find_occurances
         occurance_found:
             add dl, [sub_string.strlen]
             dec dl
@@ -552,6 +548,9 @@ CODESEG
             add bp, ax
             ; Print occurances
             mov al, [byte ptr ds:[bp+1]]
+            ; if no occurances - continue
+            cmp al, 0
+            je print_check_counter
             call ParseNum
             call PrintNum
             ; Print space
