@@ -59,7 +59,7 @@ CODESEG
         sorting:
             call SortData
         printing:
-            ; TODO: printing
+            call PrintData
         exit:
             mov ah, 4ch
             int 21h
@@ -113,8 +113,7 @@ CODESEG
             push dx
             push di
             ; Setup ParseData
-            mov bp, 0
-            add bp, offset parse_data
+            mov bp, offset parse_data
             mov ax, 2
             mul cx
             add bp, ax
@@ -430,6 +429,12 @@ CODESEG
             ret
     ENDP    StrTrimStart
 
+    ;---------------------------------------------------------------
+    ;       parse_data = parsed data
+    ;       parse_count = number of parsed data structs
+    ;
+    ;  OUT: 
+    ;---------------------------------------------------------------
     PROC    SortData
             ; Reserve registers
             push ax
@@ -470,5 +475,118 @@ CODESEG
             pop ax
             ret
     ENDP    SortData
+
+    ;---------------------------------------------------------------
+    ;       al = 8-bit number
+    ;
+    ;  OUT: number characters in stack
+    ;---------------------------------------------------------------
+    PROC    ParseNum
+            ; Preserve `ret` address
+            pop bx
+            ; Parse number
+        num_parse:
+            mov ah, 0
+            ; division
+            mov cl, 10
+            div cl
+            ; print
+            mov dh, 0
+            mov dl, 48
+            add dl, ah
+            push dx
+            ; check if 0
+            cmp al, 0
+            jne num_parse
+            ; Restore `ret` address
+            push bx
+            ret
+    ENDP    ParseNum
+
+    ;---------------------------------------------------------------
+    ;       characyers 0-9 at the top of the stack
+    ;
+    ;  OUT: printed numbers
+    ;---------------------------------------------------------------
+    PROC    PrintNum
+            ; Preserve `ret` address
+            pop bx
+        number_printing:
+            pop dx
+            cmp dx, 58 ; greater than '9'
+            jge not_number
+        nine_or_l:
+            cmp dx, 48 ; less than '0'
+            jl not_number
+            mov ah, 2
+            int 21h
+            jmp number_printing
+        not_number:
+            push dx
+            ; Restore `ret` address
+            push bx
+            ret
+    ENDP    PrintNum
+
+    ;---------------------------------------------------------------
+    ;       parse_data = parsed data
+    ;       parse_count = number of parsed data structs
+    ;
+    ;  OUT: printed data
+    ;---------------------------------------------------------------
+    PROC    PrintData
+            ; Reserve registers
+            push ax
+            push bx
+            push cx
+            push dx
+            push si
+            ; Counter
+            mov cx, 0
+        print_parsed_data:
+            mov si, cx
+            ; Get parsed data
+            mov bp, offset parse_data
+            mov ax, 2
+            mul cx
+            add bp, ax
+            ; Print occurances
+            mov al, [byte ptr ds:[bp+1]]
+            call ParseNum
+            call PrintNum
+            ; Print space
+            mov dl, ' '
+            mov ah, 2
+            int 21h
+            ; Print index
+            mov al, [byte ptr ds:[bp]]
+            call ParseNum
+            call PrintNum
+            ; Check CRLF
+            mov dx, si
+            inc dl
+            cmp dl, [parse_count]
+            je print_check_counter
+            ; Print CRLF
+            mov dl, ASCcr
+            mov ah, 2
+            int 21h
+            mov dl, ASClf
+            mov ah, 2
+            int 21h
+            ; Check counter
+        print_check_counter:
+            mov cx, si
+            inc cx
+            cmp cl, [parse_count]
+            jne print_parsed_data
+            ; Restore registers
+            pop si
+            pop dx
+            pop cx
+            pop bx
+            pop ax
+            ret
+    ENDP    PrintData
 
 END START
