@@ -28,6 +28,7 @@ DATASEG
 sub_string      StrBuffer <>
 tmp_string      StrBuffer <>
 parse_data      ParseData 100 dup(<>)
+parse_count     db 0
 
 ; CODE
 CODESEG
@@ -47,15 +48,18 @@ CODESEG
             mov [tmp_string.strlen], dl
             ; Check if EOF
             cmp [byte ptr ds:[di+1]], 0
-            je exit
+            je sorting
             ; Process string
             call ProcessString  
             ; Inc counter
             inc cx
+            inc [parse_count]
             ; Loop          
             jmp process_strings
         sorting:
-            ; TODO: sorting
+            call SortData
+        printing:
+            ; TODO: printing
         exit:
             mov ah, 4ch
             int 21h
@@ -425,5 +429,46 @@ CODESEG
             pop ax
             ret
     ENDP    StrTrimStart
+
+    PROC    SortData
+            ; Reserve registers
+            push ax
+            push bx
+            push cx
+            push dx
+            push si
+            ; clear
+            mov ax, 0
+            mov bx, 0
+            mov cx, 0
+            mov dx, 0
+            ; sorting
+            mov dl, [parse_count]
+        sorting_outer_loop:
+            mov cl, [parse_count]
+            dec cl
+            mov si, offset parse_data
+        sorting_inner_loop:
+            mov al, [si]        ; idx 1
+            mov bl, [si+1]      ; occs 1
+            cmp bl, [si+3]      ; cmp occs 1 and occs 2
+            jl sorting_equal       
+            xchg bl, [si+3]     ; exchange occs 1 and occs 2
+            mov [si+1], bl
+            xchg al, [si+2]     ; exchange idx 1 and idx 2
+            mov [si], al
+        sorting_equal:
+            add si, 2
+            loop sorting_inner_loop
+            dec dx
+            jnz sorting_outer_loop
+            ; Restore registers
+            pop si
+            pop dx
+            pop cx
+            pop bx
+            pop ax
+            ret
+    ENDP    SortData
 
 END START
